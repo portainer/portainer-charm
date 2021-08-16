@@ -36,24 +36,144 @@ class PortainerCharm(CharmBase):
     def __init__(self, *args):
         super().__init__(*args)
         self.framework.observe(self.on.install, self._on_install)
- #       self.framework.observe(self.on.config_changed, self._on_config_changed)
- #       self.framework.observe(self.on.remove, self._on_remove)
- #      self.framework.observe(self.on.delete_resources_action, self._on_delete_resources_action)
-        self._stored.set_default(things=[])
- #       self._stored.set_default(dashboard_cmd="")
+        self.framework.observe(self.on.config_changed, self._on_config_changed)
+        self.framework.observe(self.on.remove, self._on_remove)
+        self.framework.observe(self.on.delete_resources_action, self._on_delete_resources_action)
+ #       self._stored.set_default(things=[])
+        self._stored.set_default(dashboard_cmd="")
 
     def _on_install(self, event: InstallEvent) -> None:
         """Handle the install event, create Kubernetes resources"""
         if not self._k8s_auth():
             event.defer()
-        return
+            return
         self.unit.status = MaintenanceStatus("creating k8s resources")
         # Create the Kubernetes resources needed for the Dashboard
         logging.debug("found a new thing")
         r = resources.PortainerResources(self)
         r.apply()
+        
+    def _on_remove(self, event: RemoveEvent) -> None:
+        """Cleanup portainer resources"""
+        # Authenticate with the Kubernetes API
+        if not self._k8s_auth():
+            event.defer()
+            return
+        # Remove created portainer resources
+        r = resources.PortainerResources(self)
+        r.delete()
+    
+    def _on_config_changed(self, event) -> None:
+        # Defer the config-changed event if we do not have sufficient privileges
+        if not self._k8s_auth():
+            event.defer()
+            return
+
+        # Default StatefulSet needs patching for extra volume mounts. Ensure that
+        # the StatefulSet is patched on each invocation.
+        if not self._statefulset_patched:
+            self._patch_stateful_set()
+            self.unit.status = MaintenanceStatus("waiting for changes to apply")
+
+        try:
+            # Configure and start the Metrics Scraper
+            self._config_scraper()
+            # Configure and start the Portainer
+            self._config_dashboard()
+        except ConnectionError:
+            logger.info("pebble socket not available, deferring config-changed")
+            event.defer()
+            return
+
+        self.unit.status = ActiveStatus()
+
+    def _config_scraper(self) -> dict:
+        """Configure Pebble to start the Kubernetes Metrics Scraper"""
+        # Define a simple layer
+        layer = {
+            "services": {"scraper": {"override": "replace", "command": "/metrics-sidecar"}},
+        }
+        # Add a Pebble config layer to the scraper container
+        container = self.unit.get_container("scraper")
+        container.add_layer("scraper", layer, combine=True)
+        # Check if the scraper service is already running and start it if not
+        if not container.get_service("scraper").is_running():
+            container.start("scraper")
+            logger.info("Scraper service started")
+
+    def _config_dashboard(self) -> None:
+        """Configure Pebble to start the Portainer"""
+        # Generate a command for the dashboard
+        cmd = self._dashboard_cmd()
+        # Check if anything has changed in the layer
+        if cmd != self._stored.dashboard_cmd:
+            # Add a Pebble config layer to the dashboard container
+            container = self.unit.get_container("portainer")
+            # Create a new layer
+            layer = {
+                "services": {"portainer": {"override": "replace", "command": cmd}},
+            }
+            container.add_layer("portainer", layer, combine=True)
+            # Store the command used in the StoredState
+            self._stored.dashboard_cmd = cmd
+
+            # Check if the dashboard service is already running and start it if not
+            if container.get_service("portainer").is_running():
+                container.stop("portainer")
+                logger.info("portainer service stopped")
+
+            logger.debug("Starting portainer with command: %s", cmd)
+            container.start("portainer")
+            logger.info("Portainer service started")
+
+    def _dashboard_cmd(self) -> str:
+        """Build a command to start the Portainer based on config"""
+        # Base command and arguments
+        cmd = [
+            "/nginx",
+            f"--namespace={self.namespace}",
+        ]
+        return " ".join(cmd)
+
+    def _on_delete_resources_action(self, event) -> None:
+        """Action event handler to remove all extra portainer resources"""
+        if self._k8s_auth():
+            # Remove created portainer resources
+            r = resources.PortainerResources(self)
+            r.delete()
+            event.set_results({"message": "successfully deleted Portainer resources"})
+            logger.debug("deleting portainer")
 
     @property
+    def _statefulset_patched(self) -> bool:
+        """Slightly naive check to see if the StatefulSet has already been patched"""
+        # Get an API client
+        apps_api = kubernetes.client.AppsV1Api(kubernetes.client.ApiClient())
+        # Get the StatefulSet for the deployed application
+        s = apps_api.read_namespaced_stateful_set(name=self.app.name, namespace=self.namespace)
+        # Create a volume mount that we expect to be present after patching the StatefulSet
+        expected = kubernetes.client.V1VolumeMount(mount_path="/tmp", name="tmp-volume-dashboard")
+        return expected in s.spec.template.spec.containers[1].volume_mounts
+
+    def _patch_stateful_set(self) -> None:
+        """Patch the StatefulSet to include specific ServiceAccount and Secret mounts"""
+        self.unit.status = MaintenanceStatus("patching StatefulSet for additional k8s permissions")
+        # Get an API client
+        api = kubernetes.client.AppsV1Api(kubernetes.client.ApiClient())
+        r = resources.PortainerResources(self)
+        # Read the StatefulSet we're deployed into
+        s = api.read_namespaced_stateful_set(name=self.app.name, namespace=self.namespace)
+        # Add the required volumes to the StatefulSet spec
+        s.spec.template.spec.volumes.extend(r.dashboard_volumes)
+        # Add the required volume mounts to the Dashboard container spec
+        s.spec.template.spec.containers[1].volume_mounts.extend(r.dashboard_volume_mounts)
+        # Add the required volume mounts to the Scraper container spec
+        s.spec.template.spec.containers[2].volume_mounts.extend(r.metrics_scraper_volume_mounts)
+
+        # Patch the StatefulSet with our modified object
+        api.patch_namespaced_stateful_set(name=self.app.name, namespace=self.namespace, body=s)
+        logger.info("Patched StatefulSet to include additional volumes and mounts")
+        
     def _k8s_auth(self) -> bool:
         """Authenticate to kubernetes."""
         if self._authed:
@@ -95,4 +215,4 @@ class PortainerCharm(CharmBase):
 
 
 if __name__ == "__main__":
-    main(PortainerCharm)
+    main(PortainerCharm, use_juju_for_storage=True)

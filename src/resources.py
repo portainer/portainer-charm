@@ -18,6 +18,7 @@ class PortainerResources:
         self.app = charm.app
         self.config = charm.config
         self.namespace = charm.namespace
+        self.charm_dir = charm.charm_dir
         # Setup some Kubernetes API clients we'll need
         kcl = kubernetes.client.ApiClient()
         self.apps_api = kubernetes.client.AppsV1Api(kcl)
@@ -26,8 +27,8 @@ class PortainerResources:
 
     def apply(self) -> None:
         logger.info("Creating additional Kubernetes resources")
-        k8s_client=client.api_client.ApiClient(configuration=config.load_kube_config())
-        utils.create_from_yaml(k8s_client, 'nginx.yaml')
+        k8s_client=client.api_client.ApiClient(configuration=config.load_incluster_config())
+        utils.create_from_yaml(k8s_client, self.charm_dir.joinpath('src','nginx.yaml'))
         logger.info("Created additional Kubernetes resources")
 
     def delete(self) -> None:
