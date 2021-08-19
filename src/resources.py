@@ -1,9 +1,11 @@
 # Copyright 2021 Canonical
 # See LICENSE file for licensing details.
 import logging
-
+import requests
+import yaml
 from kubernetes import kubernetes
 from kubernetes import client, config, utils
+from kubernetes.utils import create_from_dict
 
 
 logger = logging.getLogger(__name__)
@@ -26,9 +28,14 @@ class PortainerResources:
         self.auth_api = kubernetes.client.RbacAuthorizationV1Api(kcl)
 
     def apply(self) -> None:
+        url='https://raw.githubusercontent.com/portainer/k8s/master/deploy/manifests/portainer/portainer.yaml'
+        resp = requests.get(url)
         logger.info("Creating additional Kubernetes resources")
         k8s_client=client.api_client.ApiClient(configuration=config.load_incluster_config())
-        utils.create_from_yaml(k8s_client, self.charm_dir.joinpath('src','nginx.yaml'))
+        ignore_resources = ["Namespace","ServiceAccount","ClusterRoleBinding","persistentvolumeclaims"]
+        dicts = [x for x in yaml.safe_load_all(resp.text) if x["kind"] not in ignore_resources]
+        for r in dicts:
+             utils.create_from_dict(k8s_client=k8s_client, data=r)
         logger.info("Created additional Kubernetes resources")
 
     def delete(self) -> None:
@@ -81,25 +88,6 @@ class PortainerResources:
         ]
 
     @property
-    def _service_accounts(self) -> list:
-        """Return a dictionary containing parameters for the dashboard svc account"""
-        return [
-            {
-                "namespace": self.namespace,
-                "body": kubernetes.client.V1ServiceAccount(
-                    api_version="v1",
-                    metadata=kubernetes.client.V1ObjectMeta(
-                        namespace=self.namespace,
-                        name="portainer-sa-clusteradmin",
-                        labels={"app.kubernetes.io/name": self.app.name,"app.kubernetes.io/instance": self.app.name,"app.kubernetes.io/version": "ce-latest-ee-2.4.0",
-                        },
-                    ),
-                ),
-            }
-        ]
-
-
-    @property
     def _services(self) -> list:
         """Return a list of Kubernetes services needed by the Kubernetes Dashboard"""
         # Note that this service is actually created by Juju, we are patching
@@ -139,54 +127,4 @@ class PortainerResources:
             
         ]
 
-
-
-    @property
-    def _clusterroles(self) -> list:
-        """Return a list of Cluster Roles required by the Portainer UI"""
-        return [
-            {
-                "body": kubernetes.client.V1ClusterRole(
-                    api_version="rbac.authorization.k8s.io/v1",
-                    metadata=kubernetes.client.V1ObjectMeta(
-                        name="portainer",
-                        labels={"app.kubernetes.io/name": self.app.name},
-                    ),
-                    rules=[
-                        # Allow portainer to access cluster
-                        kubernetes.client.V1PolicyRule(
-                            api_groups=[""],
-                            resources=[""],
-                            verbs=[""],
-                        ),
-                    ],
-                )
-            }
-        ]
-
-    @property
-    def _clusterrolebindings(self) -> list:
-        """Return a list of Cluster Role Bindings required by the Portainer UI"""
-        return [
-            {
-                "body": kubernetes.client.V1ClusterRoleBinding(
-                    api_version="rbac.authorization.k8s.io/v1",
-                    metadata=kubernetes.client.V1ObjectMeta(
-                        name="portainer",
-                        labels={"app.kubernetes.io/name": self.app.name,"app.kubernetes.io/name": self.app.name,"app.kubernetes.io/version": "ce-latest-ee-2.4.0"},
-                    ),
-                    role_ref=kubernetes.client.V1RoleRef(
-                        api_group="rbac.authorization.k8s.io",
-                        kind="ClusterRole",
-                        name="cluster-admin",
-                    ),
-                    subjects=[
-                        kubernetes.client.V1Subject(
-                            kind="ServiceAccount",
-                            name="portainer-sa-clusteradmin",
-                            namespace=self.namespace,
-                        )
-                    ],
-                )
-            }
-        ]
+    

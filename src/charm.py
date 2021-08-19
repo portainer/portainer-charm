@@ -76,8 +76,6 @@ class PortainerCharm(CharmBase):
             self.unit.status = MaintenanceStatus("waiting for changes to apply")
 
         try:
-            # Configure and start the Metrics Scraper
-            self._config_scraper()
             # Configure and start the Portainer
             self._config_dashboard()
         except ConnectionError:
@@ -86,20 +84,6 @@ class PortainerCharm(CharmBase):
             return
 
         self.unit.status = ActiveStatus()
-
-    def _config_scraper(self) -> dict:
-        """Configure Pebble to start the Kubernetes Metrics Scraper"""
-        # Define a simple layer
-        layer = {
-            "services": {"scraper": {"override": "replace", "command": "/metrics-sidecar"}},
-        }
-        # Add a Pebble config layer to the scraper container
-        container = self.unit.get_container("scraper")
-        container.add_layer("scraper", layer, combine=True)
-        # Check if the scraper service is already running and start it if not
-        if not container.get_service("scraper").is_running():
-            container.start("scraper")
-            logger.info("Scraper service started")
 
     def _config_dashboard(self) -> None:
         """Configure Pebble to start the Portainer"""
@@ -130,7 +114,8 @@ class PortainerCharm(CharmBase):
         """Build a command to start the Portainer based on config"""
         # Base command and arguments
         cmd = [
-            "/nginx",
+            "/portainer",
+            "--tunnel-port 30776",
             f"--namespace={self.namespace}",
         ]
         return " ".join(cmd)
