@@ -8,12 +8,12 @@ summary: |
 
 # TEMPLATE-TODO: replace with containers for your workload (delete for non-k8s)
 containers:
-  httpbin:
-    resource: httpbin-image
+  portainer:
+    resource: portainer-image
 
 # TEMPLATE-TODO: each container defined above must specify an oci-image resource
 resources:
-  httpbin-image:
+  portainer-image:
     type: oci-image
-    description: OCI image for httpbin (nginx:latest)
+    description: OCI image for httpbin (portainer-ce:latest)
 
