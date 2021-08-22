@@ -71,9 +71,9 @@ class PortainerCharm(CharmBase):
 
         # Default StatefulSet needs patching for extra volume mounts. Ensure that
         # the StatefulSet is patched on each invocation.
-        if not self._statefulset_patched:
-            self._patch_stateful_set()
-            self.unit.status = MaintenanceStatus("waiting for changes to apply")
+    #    if not self._statefulset_patched:
+    #        self._patch_stateful_set()
+    #        self.unit.status = MaintenanceStatus("waiting for changes to apply")
 
         try:
             # Configure and start the Portainer
@@ -116,7 +116,6 @@ class PortainerCharm(CharmBase):
         cmd = [
             "/portainer",
             "--tunnel-port 30776",
-            f"--namespace={self.namespace}",
         ]
         return " ".join(cmd)
 
@@ -129,35 +128,6 @@ class PortainerCharm(CharmBase):
             event.set_results({"message": "successfully deleted Portainer resources"})
             logger.debug("deleting portainer")
 
-    @property
-    def _statefulset_patched(self) -> bool:
-        """Slightly naive check to see if the StatefulSet has already been patched"""
-        # Get an API client
-        apps_api = kubernetes.client.AppsV1Api(kubernetes.client.ApiClient())
-        # Get the StatefulSet for the deployed application
-        s = apps_api.read_namespaced_stateful_set(name=self.app.name, namespace=self.namespace)
-        # Create a volume mount that we expect to be present after patching the StatefulSet
-        expected = kubernetes.client.V1VolumeMount(mount_path="/tmp", name="tmp-volume-dashboard")
-        return expected in s.spec.template.spec.containers[1].volume_mounts
-
-    def _patch_stateful_set(self) -> None:
-        """Patch the StatefulSet to include specific ServiceAccount and Secret mounts"""
-        self.unit.status = MaintenanceStatus("patching StatefulSet for additional k8s permissions")
-        # Get an API client
-        api = kubernetes.client.AppsV1Api(kubernetes.client.ApiClient())
-        r = resources.PortainerResources(self)
-        # Read the StatefulSet we're deployed into
-        s = api.read_namespaced_stateful_set(name=self.app.name, namespace=self.namespace)
-        # Add the required volumes to the StatefulSet spec
-        s.spec.template.spec.volumes.extend(r.dashboard_volumes)
-        # Add the required volume mounts to the Dashboard container spec
-        s.spec.template.spec.containers[1].volume_mounts.extend(r.dashboard_volume_mounts)
-        # Add the required volume mounts to the Scraper container spec
-        s.spec.template.spec.containers[2].volume_mounts.extend(r.metrics_scraper_volume_mounts)
-
-        # Patch the StatefulSet with our modified object
-        api.patch_namespaced_stateful_set(name=self.app.name, namespace=self.namespace, body=s)
-        logger.info("Patched StatefulSet to include additional volumes and mounts")
         
     def _k8s_auth(self) -> bool:
         """Authenticate to kubernetes."""

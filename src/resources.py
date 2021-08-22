@@ -32,7 +32,7 @@ class PortainerResources:
         resp = requests.get(url)
         logger.info("Creating additional Kubernetes resources")
         k8s_client=client.api_client.ApiClient(configuration=config.load_incluster_config())
-        ignore_resources = ["Namespace","ServiceAccount","ClusterRoleBinding","persistentvolumeclaims"]
+        ignore_resources = ["Namespace","ServiceAccount","ClusterRoleBinding","PersistentVolumeClaim","Service","Deployment"]
         dicts = [x for x in yaml.safe_load_all(resp.text) if x["kind"] not in ignore_resources]
         for r in dicts:
              utils.create_from_dict(k8s_client=k8s_client, data=r)
@@ -83,7 +83,7 @@ class PortainerResources:
             # ),
             kubernetes.client.V1VolumeMount(
                 mount_path="/var/run/secrets/kubernetes.io/serviceaccount",
-                name="portainer-service-account",
+                name="portainer",
             ),
         ]
 
