@@ -17,7 +17,6 @@ from ops.framework import StoredState
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
 from ops.pebble import ConnectionError
-
 #import cert
 import resources
 
@@ -50,8 +49,13 @@ class PortainerCharm(CharmBase):
         self.unit.status = MaintenanceStatus("creating k8s resources")
         # Create the Kubernetes resources needed for the Dashboard
         logging.debug("found a new thing")
-        r = resources.PortainerResources(self)
+        r = resources.PortainerResources(self)              
         r.apply()
+        api = kubernetes.client.CoreV1Api(kubernetes.client.ApiClient())
+        api.delete_namespaced_service(name="portainer", namespace="portainer")
+        for service in resources.PortainerResources(self)._services:
+            api.create_namespaced_service(**service)
+       # logging.debug(resources.PortainerResources._services()[0]["body"])
         
     def _on_remove(self, event: RemoveEvent) -> None:
         """Cleanup portainer resources"""
