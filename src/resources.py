@@ -5,7 +5,6 @@ import logging
 import requests
 import yaml
 from kubernetes import client, config, kubernetes, utils
-from kubernetes.utils import create_from_dict
 
 logger = logging.getLogger(__name__)
 
@@ -122,18 +121,17 @@ class PortainerResources:
                                 name="http",
                                 port=9000,
                                 target_port=9000,
-                                # node_port=30776,
+                                node_port=30776,
                             ),
                             kubernetes.client.V1ServicePort(
                                 name="edge",
                                 port=8000,
                                 target_port=8000,
-                                # node_port=30777,
+                                node_port=30777,
                             ),
                         ],
                         selector={
                             "app.kubernetes.io/name": self.app.name,
-                            "app.kubernetes.io/instance": self.app.name,
                         },
                     ),
                 ),
