@@ -10,20 +10,21 @@ from pathlib import Path
 from subprocess import check_output
 from typing import Optional
 
-#from cryptography import x509
+# from cryptography import x509
 from kubernetes import kubernetes
 from ops.charm import CharmBase, InstallEvent, RemoveEvent
 from ops.framework import StoredState
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
 from ops.pebble import ConnectionError
-#import cert
+
+# import cert
 import resources
 
 logger = logging.getLogger(__name__)
 
 # Reduce the log output from the Kubernetes library
-#logging.getLogger("kubernetes").setLevel(logging.INFO)
+# logging.getLogger("kubernetes").setLevel(logging.INFO)
 
 
 class PortainerCharm(CharmBase):
@@ -38,7 +39,7 @@ class PortainerCharm(CharmBase):
         self.framework.observe(self.on.config_changed, self._on_config_changed)
         self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on.delete_resources_action, self._on_delete_resources_action)
- #       self._stored.set_default(things=[])
+        #       self._stored.set_default(things=[])
         self._stored.set_default(dashboard_cmd="")
 
     def _on_install(self, event: InstallEvent) -> None:
@@ -49,14 +50,15 @@ class PortainerCharm(CharmBase):
         self.unit.status = MaintenanceStatus("creating k8s resources")
         # Create the Kubernetes resources needed for the Dashboard
         logging.debug("found a new thing")
-        r = resources.PortainerResources(self)              
+        r = resources.PortainerResources(self)
         r.apply()
         api = kubernetes.client.CoreV1Api(kubernetes.client.ApiClient())
         api.delete_namespaced_service(name="portainer", namespace="portainer")
         for service in resources.PortainerResources(self)._services:
             api.create_namespaced_service(**service)
-       # logging.debug(resources.PortainerResources._services()[0]["body"])
-        
+
+    # logging.debug(resources.PortainerResources._services()[0]["body"])
+
     def _on_remove(self, event: RemoveEvent) -> None:
         """Cleanup portainer resources"""
         # Authenticate with the Kubernetes API
@@ -66,7 +68,7 @@ class PortainerCharm(CharmBase):
         # Remove created portainer resources
         r = resources.PortainerResources(self)
         r.delete()
-    
+
     def _on_config_changed(self, event) -> None:
         # Defer the config-changed event if we do not have sufficient privileges
         if not self._k8s_auth():
@@ -75,9 +77,9 @@ class PortainerCharm(CharmBase):
 
         # Default StatefulSet needs patching for extra volume mounts. Ensure that
         # the StatefulSet is patched on each invocation.
-    #    if not self._statefulset_patched:
-    #        self._patch_stateful_set()
-    #        self.unit.status = MaintenanceStatus("waiting for changes to apply")
+        #    if not self._statefulset_patched:
+        #        self._patch_stateful_set()
+        #        self.unit.status = MaintenanceStatus("waiting for changes to apply")
 
         try:
             # Configure and start the Portainer
@@ -132,7 +134,6 @@ class PortainerCharm(CharmBase):
             event.set_results({"message": "successfully deleted Portainer resources"})
             logger.debug("deleting portainer")
 
-        
     def _k8s_auth(self) -> bool:
         """Authenticate to kubernetes."""
         if self._authed:
@@ -162,7 +163,7 @@ class PortainerCharm(CharmBase):
 
         self._authed = True
         return True
-    
+
     @property
     def namespace(self) -> str:
         with open("/var/run/secrets/kubernetes.io/serviceaccount/namespace", "r") as f:

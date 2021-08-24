@@ -1,12 +1,11 @@
 # Copyright 2021 Canonical
 # See LICENSE file for licensing details.
 import logging
+
 import requests
 import yaml
-from kubernetes import kubernetes
-from kubernetes import client, config, utils
+from kubernetes import client, config, kubernetes, utils
 from kubernetes.utils import create_from_dict
-
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +27,21 @@ class PortainerResources:
         self.auth_api = kubernetes.client.RbacAuthorizationV1Api(kcl)
 
     def apply(self) -> None:
-        url='https://raw.githubusercontent.com/portainer/k8s/master/deploy/manifests/portainer/portainer.yaml'
+        url = "https://raw.githubusercontent.com/portainer/k8s/master/deploy/manifests/portainer/portainer.yaml"
         resp = requests.get(url)
         logger.info("Creating additional Kubernetes resources")
-        k8s_client=client.api_client.ApiClient(configuration=config.load_incluster_config())
-        ignore_resources = ["Namespace","ServiceAccount","ClusterRoleBinding","PersistentVolumeClaim","Deployment","Service"]
+        k8s_client = client.api_client.ApiClient(configuration=config.load_incluster_config())
+        ignore_resources = [
+            "Namespace",
+            "ServiceAccount",
+            "ClusterRoleBinding",
+            "PersistentVolumeClaim",
+            "Deployment",
+            "Service",
+        ]
         dicts = [x for x in yaml.safe_load_all(resp.text) if x["kind"] not in ignore_resources]
         for r in dicts:
-             utils.create_from_dict(k8s_client=k8s_client, data=r)
+            utils.create_from_dict(k8s_client=k8s_client, data=r)
         logger.info("Created additional Kubernetes resources")
 
     def delete(self) -> None:
@@ -102,29 +108,34 @@ class PortainerResources:
                     metadata=kubernetes.client.V1ObjectMeta(
                         namespace=self.namespace,
                         name=self.app.name,
-                        labels={"io.portainer.kubernetes.application.stack": self.app.name,"app.kubernetes.io/name": self.app.name,"app.kubernetes.io/instance": self.app.name,"app.kubernetes.io/version": "ce-latest-ee-2.4.0"},
+                        labels={
+                            "io.portainer.kubernetes.application.stack": self.app.name,
+                            "app.kubernetes.io/name": self.app.name,
+                            "app.kubernetes.io/instance": self.app.name,
+                            "app.kubernetes.io/version": "ce-latest-ee-2.4.0",
+                        },
                     ),
                     spec=kubernetes.client.V1ServiceSpec(
-                        type="NodePort",                     
+                        type="NodePort",
                         ports=[
                             kubernetes.client.V1ServicePort(
                                 name="http",
                                 port=9000,
                                 target_port=9000,
-                                node_port=30776,
+                                # node_port=30776,
                             ),
                             kubernetes.client.V1ServicePort(
                                 name="edge",
                                 port=8000,
                                 target_port=8000,
-                                node_port=30777,
+                                # node_port=30777,
                             ),
                         ],
-                        selector={"app.kubernetes.io/name": self.app.name,"app.kubernetes.io/instance": self.app.name},
+                        selector={
+                            "app.kubernetes.io/name": self.app.name,
+                            "app.kubernetes.io/instance": self.app.name,
+                        },
                     ),
                 ),
             },
-            
         ]
-
-    
