@@ -1,6 +1,0 @@
-# Copyright 2021 Canonical
-# See LICENSE file for licensing details.
-
-delete-resources:
-  description: |
-    Debugging action to delete all Kubernetes resources related to the dashboard
