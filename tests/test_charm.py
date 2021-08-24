@@ -1,4 +1,4 @@
-# Copyright 2021 root
+# Copyright 2021 Portainer
 # See LICENSE file for licensing details.
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing

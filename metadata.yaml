@@ -1,19 +1,31 @@
-# Copyright 2021 root
+# Copyright 2021 Portainer
 # See LICENSE file for licensing details.
 name: portainer
 description: |
-  TEMPLATE-TODO: fill out the charm's description
-summary: |
-  TEMPLATE-TODO: fill out the charm's summary
+  Portainer enables centralized configuration, management and security of Kubernetes and Docker
+  environments, allowing you to deliver ‘Containers-as-a-Service’ to your users quickly, easily
+  and securely.
 
-# TEMPLATE-TODO: replace with containers for your workload (delete for non-k8s)
+  Adopting container solutions like Kubernetes is hard. To succeed, you need to provide secure 
+  access to a range of users with differing needs. Portainer solves this by allowing you to
+  centrally configure, manage and secure your environment regardless of where its hosted (on prem,
+  in the cloud at the edge) or what K8s distro you are using.
+
+  Portainer allows developers to deploy and manage cloud native apps through Portainer's 
+  simplified 'expert' UI, with native dashboards or through integration with industry standard
+  CI/CD tools.
+
+  Regardless of the deployment method, Portainer ensures governance and policies are applied 
+  and app deployments are successful.
+summary: |
+  Portainer enables centralized configuration, management and security of Kubernetes and Docker 
+  environments
+
 containers:
   portainer:
     resource: portainer-image
 
-# TEMPLATE-TODO: each container defined above must specify an oci-image resource
 resources:
   portainer-image:
     type: oci-image
-    description: OCI image for httpbin (portainer-ce:latest)
-
+    description: OCI image for portainer (portainer/portainer-ce:latest)
