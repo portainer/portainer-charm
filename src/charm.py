@@ -3,37 +3,85 @@
 # See LICENSE file for licensing details.
 
 import logging
+import utils
 
 from kubernetes import kubernetes
 from ops.charm import CharmBase
 from ops.framework import StoredState
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 
 logger = logging.getLogger(__name__)
 # Reduce the log output from the Kubernetes library
 # logging.getLogger("kubernetes").setLevel(logging.INFO)
-
+CHARM_VERSION = 1.0
+PORTAINER_IMG = "portainer/portainer-ee:2.7.0"
+SERVICE_VERSION = "portainer-ee-2.7.0"
+SERVICETYPE_LB = "LoadBalancer"
+SERVICETYPE_CIP = "ClusterIP"
+SERVICETYPE_NP = "NodePort"
+CONFIG_SERVICETYPE = "service_type"
+CONFIG_SERVICEHTTPPORT = "service_http_port"
+CONFIG_SERVICEHTTPNODEPORT = "service_http_node_port"
+CONFIG_SERVICEEDGEPORT = "service_edge_port"
+CONFIG_SERVICEEDGENODEPORT = "service_edge_node_port"
 
 class PortainerCharm(CharmBase):
     """Charm the service."""
+    _stored = StoredState()
 
     def __init__(self, *args):
         super().__init__(*args)
+        logger.info(f"initialising charm, version: {CHARM_VERSION}", )
+        if not self.unit.is_leader():
+            logger.warn("portainer must work as a leader, waiting for leadership")
+            self.unit.status = WaitingStatus('waiting for leadership')
+            return
+        # setup default config value, only create if not exist
+        self._stored.set_default(
+            charm_version = CHARM_VERSION,
+            config = self._default_config,
+        )
+        if self._stored.charm_version is None:
+            self._stored.charm_version = CHARM_VERSION
+        if self._stored.config is None:
+            self._stored.config = self._default_config
+
+        logger.debug(f"start with config: {self._config}")
         self.framework.observe(self.on.install, self._on_install)
+        self.framework.observe(self.on.config_changed, self._on_config_changed)
         self.framework.observe(self.on.start, self._start_portainer)
         self.framework.observe(self.on.portainer_pebble_ready, self._start_portainer)
 
     def _on_install(self, event):
         """Handle the install event, create Kubernetes resources"""
+        logger.info("installing charm")
         if not self._k8s_auth():
+            self.unit.status = WaitingStatus('waiting for k8s auth')
+            logger.debug("waiting for k8s auth, installation deferred")
             event.defer()
             return
         self.unit.status = MaintenanceStatus("patching kubernetes service for portainer")
+        self._create_k8s_service_by_config()
 
-        api = kubernetes.client.CoreV1Api(kubernetes.client.ApiClient())
-        api.delete_namespaced_service(name="portainer", namespace=self.namespace)
-        api.create_namespaced_service(**self._service)
+    def _on_config_changed(self, event):
+        """Handles the configuration changes, see juju life cycles for when this event is called
+        """
+        logger.info("configuring charm")
+        # self.model.config is the aggregated config in the current runtime
+        logger.debug(f"current config: {self._config} vs future config: {self.model.config}")
+        # merge the runtime config with stored one
+        new_config = { **self._config, **self.model.config }
+        if new_config != self._config:
+            if not self._k8s_auth():
+                self.unit.status = WaitingStatus('waiting for k8s auth')
+                logger.debug("waiting for k8s auth, configuration deferred")
+                event.defer()
+                return
+            self._patch_k8s_service_by_config(new_config)
+        # set the config
+        self._set_config(new_config)
+        logger.debug(f"merged config: {self._config}")
 
     def _start_portainer(self, _):
         """Function to handle starting Portainer using Pebble"""
@@ -67,6 +115,160 @@ class PortainerCharm(CharmBase):
                 raise e
         return True
 
+    def _replace_k8s_service_by_config(self, new_config: dict):
+        """Replace k8s service by stored config."""
+        logger.info("replacing k8s service by config")
+        logger.debug(f"replacing by config: {new_config}")
+        api = kubernetes.client.CoreV1Api(kubernetes.client.ApiClient())
+        # a direct replacement of /spec won't work, since it misses things like cluster_ip;
+        # need to get the existing config, replace the key parts inside then submit.
+        existing = None
+        try:
+            existing = api.read_namespaced_service(
+                name="portainer",
+                namespace=self.namespace,
+            )
+        except kubernetes.client.exceptions.ApiException as e:
+            if e.status == 404:
+                logger.info("portainer service doesn't exist, skip patching")
+                return
+            else:
+                raise e
+        if not existing:
+            logger.info("portainer service doesn't exist, skip patching")
+            return
+        replace = self._build_k8s_spec_by_config(new_config)
+        existing.spec.type = replace.spec.type
+        existing.spec.ports = replace.spec.ports
+        api.replace_namespaced_service(
+            name="portainer", 
+            namespace=self.namespace, 
+            body=existing,
+        )
+
+    # Issue with this method:
+    # _build_k8s_spec_by_config generates the object that leaves 'None'
+    # when stringified, e.g. {'cluster_ip': None,'external_i_ps': None,'external_name': None},
+    # causing k8s complaining: Invalid value: []core.IPFamily(nil): primary ipFamily can not be unset
+    def _patch_k8s_service_by_config(self, new_config: dict):
+        """Patch k8s service by stored config."""
+        logger.info("updating k8s service by config")
+        client = kubernetes.client.ApiClient()
+        api = kubernetes.client.CoreV1Api(client)
+        
+        # a direct replacement of /spec won't work, since it misses things like cluster_ip;
+        # need to serialize the object to dictionay then clean none entries to replace bits by bits.
+        spec = utils.clean_nones(
+            client.sanitize_for_serialization(
+                self._build_k8s_spec_by_config(new_config)))
+        body = []
+        for k, v in spec.items():
+            body.append({
+                "op": "replace",
+                "path": f"/spec/{k}",
+                "value": v,
+            })
+        logger.debug(f"patching with body: {body}")
+        if body:
+            api.patch_namespaced_service(
+                name="portainer",
+                namespace=self.namespace,
+                body=body,
+            )
+        else:
+            logger.info("nothing to patch, skip patching")
+            return
+    
+    def _create_k8s_service_by_config(self):
+        """Delete then create k8s service by stored config."""
+        logger.info("creating k8s service")
+        api = kubernetes.client.CoreV1Api(kubernetes.client.ApiClient())
+        try:
+            api.delete_namespaced_service(name="portainer", namespace=self.namespace)
+        except kubernetes.client.exceptions.ApiException as e:
+            if e.status == 404:
+                logger.info("portainer service doesn't exist, skip deletion")
+            else:
+                raise e
+        api.create_namespaced_service(
+            namespace=self.namespace,
+            body=self._build_k8s_service_by_config(self._config),
+        )
+
+    def _build_k8s_service_by_config(self, config: dict) -> kubernetes.client.V1Service:
+        """Constructs k8s service spec by input config"""
+        return kubernetes.client.V1Service(
+            api_version="v1",
+            metadata=kubernetes.client.V1ObjectMeta(
+                namespace=self.namespace,
+                name=self.app.name,
+                labels={
+                    "io.portainer.kubernetes.application.stack": self.app.name,
+                    "app.kubernetes.io/name": self.app.name,
+                    "app.kubernetes.io/instance": self.app.name,
+                    "app.kubernetes.io/version": SERVICE_VERSION,
+                },
+            ),
+            spec=self._build_k8s_spec_by_config(config),
+        )
+
+    def _build_k8s_spec_by_config(self, config: dict) -> kubernetes.client.V1ServiceSpec:
+        """Constructs k8s service spec by input config"""
+        service_type = config[CONFIG_SERVICETYPE]
+        http_port = kubernetes.client.V1ServicePort(
+            name="http",
+            port=config[CONFIG_SERVICEHTTPPORT],
+            target_port=9000,
+        )
+        if (service_type == SERVICETYPE_NP 
+            and CONFIG_SERVICEHTTPNODEPORT in config):
+            http_port.node_port = config[CONFIG_SERVICEHTTPNODEPORT]
+
+        edge_port = kubernetes.client.V1ServicePort(
+            name="edge",
+            port=config[CONFIG_SERVICEEDGEPORT],
+            target_port=8000,
+        )
+        if (service_type == SERVICETYPE_NP 
+            and CONFIG_SERVICEEDGENODEPORT in config):
+            edge_port.node_port = config[CONFIG_SERVICEEDGENODEPORT]
+        
+        result = kubernetes.client.V1ServiceSpec(
+            type=service_type,
+            ports=[
+                http_port,
+                edge_port,
+            ],
+            selector={
+                "app.kubernetes.io/name": self.app.name,
+            },
+        )
+        logger.debug(f"generating spec: {result}")
+        return result
+
+    def _set_config(self, config: dict):
+        """Sets the stored config to input"""
+        self._stored.config = config
+
+    @property
+    def _config(self) -> dict:
+        """Returns the stored config"""
+        return self._stored.config
+
+    @property
+    def _default_config(self) -> dict:
+      """Returns the default config of this charm, which sets:
+
+      - service.type to LoadBalancer
+      - service.httpPort to 9000
+      - service.edgePort to 8000
+      """
+      return {
+        CONFIG_SERVICETYPE: SERVICETYPE_LB,
+        CONFIG_SERVICEHTTPPORT: 9000,
+        CONFIG_SERVICEEDGEPORT: 8000,
+      }
+
     @property
     def _layer(self) -> dict:
         """Returns a pebble layer for Portainer"""
@@ -77,46 +279,6 @@ class PortainerCharm(CharmBase):
                     "command": "/portainer --tunnel-port 30776",
                 }
             },
-        }
-
-    @property
-    def _service(self) -> dict:
-        """Return a Kubernetes service setup for Portainer"""
-        return {
-            "namespace": self.namespace,
-            "body": kubernetes.client.V1Service(
-                api_version="v1",
-                metadata=kubernetes.client.V1ObjectMeta(
-                    namespace=self.namespace,
-                    name=self.app.name,
-                    labels={
-                            "io.portainer.kubernetes.application.stack": self.app.name,
-                            "app.kubernetes.io/name": self.app.name,
-                            "app.kubernetes.io/instance": self.app.name,
-                            "app.kubernetes.io/version": "ce-latest-ee-2.4.0",
-                    },
-                ),
-                spec=kubernetes.client.V1ServiceSpec(
-                    type="NodePort",
-                    ports=[
-                        kubernetes.client.V1ServicePort(
-                            name="http",
-                            port=9000,
-                            target_port=9000,
-                            node_port=30776,
-                        ),
-                        kubernetes.client.V1ServicePort(
-                            name="edge",
-                            port=8000,
-                            target_port=8000,
-                            node_port=30777,
-                        ),
-                    ],
-                    selector={
-                        "app.kubernetes.io/name": self.app.name,
-                    },
-                ),
-            ),
         }
 
     @property

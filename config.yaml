@@ -1,0 +1,26 @@
+options:
+  service_type:
+    type: string
+    default: 'LoadBalancer'
+    description: |
+      Service Type for the main Portainer Service; Accepts ClusterIP, NodePort and LoadBalancer.
+  service_http_port:
+    type: int
+    default: 9000
+    description: |
+      HTTP port for accessing Portainer Web.
+  service_http_node_port:
+    type: int
+    default: 30777
+    description: |
+      Static NodePort for accessing Portainer Web. Specify only if the type is NodePort.
+  service_edge_port:
+    type: int
+    default: 8000
+    description: |
+      TCP port for accessing Portainer Edge.
+  service_edge_node_port:
+    type: int
+    default: 30776
+    description: |
+      Static NodePort for accessing Portainer Edge. Specify only if the type is NodePort.
