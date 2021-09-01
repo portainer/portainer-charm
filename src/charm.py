@@ -33,21 +33,13 @@ class PortainerCharm(CharmBase):
     def __init__(self, *args):
         super().__init__(*args)
         logger.info(f"initialising charm, version: {CHARM_VERSION}", )
-        if not self.unit.is_leader():
-            logger.warn("portainer must work as a leader, waiting for leadership")
-            self.unit.status = WaitingStatus('waiting for leadership')
-            return
         # setup default config value, only create if not exist
         self._stored.set_default(
             charm_version = CHARM_VERSION,
             config = self._default_config,
         )
-        if self._stored.charm_version is None:
-            self._stored.charm_version = CHARM_VERSION
-        if self._stored.config is None:
-            self._stored.config = self._default_config
-
         logger.debug(f"start with config: {self._config}")
+        # hooks up events
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
         self.framework.observe(self.on.start, self._start_portainer)
@@ -56,17 +48,41 @@ class PortainerCharm(CharmBase):
     def _on_install(self, event):
         """Handle the install event, create Kubernetes resources"""
         logger.info("installing charm")
-        if not self._k8s_auth():
-            self.unit.status = WaitingStatus('waiting for k8s auth')
-            logger.debug("waiting for k8s auth, installation deferred")
+        if not self.unit.is_leader():
+            logger.warn("portainer must work as a leader, waiting for leadership")
+            self.unit.status = WaitingStatus('waiting for leadership')
             event.defer()
             return
-        self.unit.status = MaintenanceStatus("patching kubernetes service for portainer")
+        if not self._k8s_auth():
+            self.unit.status = WaitingStatus('waiting for k8s auth')
+            logger.info("waiting for k8s auth, installation deferred")
+            event.defer()
+            return
+        self.unit.status = MaintenanceStatus("creating kubernetes service for portainer")
         self._create_k8s_service_by_config()
 
+    def _update_pebble(self, event, config: dict):
+        """Update pebble by config"""
+        logger.info("updating pebble")
+        # get a reference to the portainer workload container
+        container = self.unit.get_container("portainer")
+        if container.is_ready():
+            svc = container.get_services().get("portainer", None)
+            # check if the pebble service is already running
+            if svc:
+                logger.info("stopping pebble service")
+                container.stop("portainer")
+            # override existing layer
+            container.add_layer("portainer", self._build_layer_by_config(config), combine=True)
+            logger.info("starting pebble service")
+            container.start("portainer")
+        else:
+            self.unit.status = WaitingStatus('waiting for container to start')
+            logger.info("waiting for container to start, update pebble deferred")
+            event.defer()
+
     def _on_config_changed(self, event):
-        """Handles the configuration changes, see juju life cycles for when this event is called
-        """
+        """Handles the configuration changes"""
         logger.info("configuring charm")
         # self.model.config is the aggregated config in the current runtime
         logger.debug(f"current config: {self._config} vs future config: {self.model.config}")
@@ -75,12 +91,17 @@ class PortainerCharm(CharmBase):
         if new_config != self._config:
             if not self._k8s_auth():
                 self.unit.status = WaitingStatus('waiting for k8s auth')
-                logger.debug("waiting for k8s auth, configuration deferred")
+                logger.info("waiting for k8s auth, configuration deferred")
                 event.defer()
                 return
             self._patch_k8s_service_by_config(new_config)
+        # update pebble if service type is changed to or from nodeport
+        if (new_config[CONFIG_SERVICETYPE] != self._config[CONFIG_SERVICETYPE]
+            and (new_config[CONFIG_SERVICETYPE] == SERVICETYPE_NP 
+                or self._config[CONFIG_SERVICETYPE] == SERVICETYPE_NP)):
+            self._update_pebble(event, new_config)
         # set the config
-        self._set_config(new_config)
+        self._config = new_config
         logger.debug(f"merged config: {self._config}")
 
     def _start_portainer(self, _):
@@ -92,7 +113,7 @@ class PortainerCharm(CharmBase):
             # Check if the service is already running
             if not svc:
                 # Add a new layer
-                container.add_layer("portainer", self._layer, combine=True)
+                container.add_layer("portainer", self._build_layer_by_config(self._config), combine=True)
                 container.start("portainer")
 
             self.unit.status = ActiveStatus()
@@ -246,14 +267,31 @@ class PortainerCharm(CharmBase):
         logger.debug(f"generating spec: {result}")
         return result
 
-    def _set_config(self, config: dict):
-        """Sets the stored config to input"""
-        self._stored.config = config
+    def _build_layer_by_config(self, config: dict) -> dict:
+        """Returns a pebble layer by config"""
+        cmd = "/portainer"
+        if (config[CONFIG_SERVICETYPE] == SERVICETYPE_NP 
+            and CONFIG_SERVICEEDGENODEPORT in config):
+            cmd = f"{cmd} --tunnel-port {config[CONFIG_SERVICEEDGENODEPORT]}"
+        return {
+            "services": {
+                "portainer": {
+                    "override": "replace",
+                    "command": cmd,
+                    "startup": "enabled",
+                }
+            },
+        }
 
     @property
     def _config(self) -> dict:
         """Returns the stored config"""
         return self._stored.config
+
+    @_config.setter
+    def _config(self, config: dict):
+        """Sets the stored config to input"""
+        self._stored.config = config
 
     @property
     def _default_config(self) -> dict:
@@ -264,22 +302,10 @@ class PortainerCharm(CharmBase):
       - service.edgePort to 8000
       """
       return {
-        CONFIG_SERVICETYPE: SERVICETYPE_LB,
-        CONFIG_SERVICEHTTPPORT: 9000,
-        CONFIG_SERVICEEDGEPORT: 8000,
+          CONFIG_SERVICETYPE: SERVICETYPE_LB,
+          CONFIG_SERVICEHTTPPORT: 9000,
+          CONFIG_SERVICEEDGEPORT: 8000,
       }
-
-    @property
-    def _layer(self) -> dict:
-        """Returns a pebble layer for Portainer"""
-        return {
-            "services": {
-                "portainer": {
-                    "override": "replace",
-                    "command": "/portainer --tunnel-port 30776",
-                }
-            },
-        }
 
     @property
     def namespace(self) -> str:

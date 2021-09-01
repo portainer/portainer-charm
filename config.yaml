@@ -11,7 +11,6 @@ options:
       HTTP port for accessing Portainer Web.
   service_http_node_port:
     type: int
-    default: 30777
     description: |
       Static NodePort for accessing Portainer Web. Specify only if the type is NodePort.
   service_edge_port:
@@ -21,6 +20,5 @@ options:
       TCP port for accessing Portainer Edge.
   service_edge_node_port:
     type: int
-    default: 30776
     description: |
       Static NodePort for accessing Portainer Edge. Specify only if the type is NodePort.
