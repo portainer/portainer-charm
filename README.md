@@ -1,5 +1,13 @@
 # portainer
 
+## TODO
+-[] Service account creation
+-[] Fixed image
+-[] Simple upgrade
+-[] Fill up readme
+-[] Tests
+-[] Code cleanup
+
 ## Description
 
 TODO: Describe your charm in a few paragraphs of Markdown
@@ -7,7 +15,6 @@ TODO: Describe your charm in a few paragraphs of Markdown
 ## Usage
 
 TODO: Provide high-level usage, such as required config or relations
-
 
 ## Developing
 
