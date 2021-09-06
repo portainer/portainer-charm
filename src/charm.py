@@ -63,7 +63,11 @@ class PortainerCharm(CharmBase):
             return
         self.unit.status = MaintenanceStatus("creating kubernetes service for portainer")
         self._create_k8s_service_by_config()
-        self._create_k8s_service_account()
+        if not self._create_k8s_service_account():
+            self.unit.status = WaitingStatus('waiting for service account perconditions')
+            logger.info("waiting for service account perconditions, installation deferred")
+            event.defer()
+            return
 
     def _update_pebble(self, event, config: dict):
         """Update pebble by config"""
@@ -231,16 +235,30 @@ class PortainerCharm(CharmBase):
             body=self._build_k8s_service_by_config(self._config),
         )
 
-    def _create_k8s_service_account(self):
+    def _create_k8s_service_account(self) -> bool:
         """Delete then create the service accounts needed by Portainer"""
         logger.info("creating k8s service account")
         SERVICEACCOUNT_NAME = "portainer-sa-clusteradmin"
-        api = kubernetes.client.CoreV1Api(kubernetes.client.ApiClient())
+        CLUSTERRB_NAME = "portainer"
+        CLUSTERROLE_NAME = "cluster-admin"
+        client = kubernetes.client.ApiClient()
+        api = kubernetes.client.CoreV1Api(client)
+        rbac = kubernetes.client.RbacAuthorizationV1Api(client)
+        # check cluster role, make sure it exists
+        try:
+            rbac.read_cluster_role(name=CLUSTERROLE_NAME)
+        except kubernetes.client.exceptions.ApiException as e:
+            if e.status == 404:
+                logger.error(f"{CLUSTERROLE_NAME} cluster role doesn't exist, please make sure RBAC is enabled in k8s cluster.")
+                return False
+            else:
+                raise e
+        # creates service account
         try:
             api.delete_namespaced_service_account(name=SERVICEACCOUNT_NAME, namespace=self.namespace)
         except kubernetes.client.exceptions.ApiException as e:
             if e.status == 404:
-                logger.info("portainer service account doesn't exist, skip deletion")
+                logger.info(f"{SERVICEACCOUNT_NAME} service account doesn't exist, skip deletion")
             else:
                 raise e
         api.create_namespaced_service_account(
@@ -258,6 +276,42 @@ class PortainerCharm(CharmBase):
                 ),
             ),
         )
+        # create cluster role binding with the service account
+        logger.info("creating k8s cluster role binding")
+        try:
+            rbac.delete_cluster_role_binding(name=CLUSTERRB_NAME)
+        except kubernetes.client.exceptions.ApiException as e:
+            if e.status == 404:
+                logger.info(f"{CLUSTERRB_NAME} cluster role binding doesn't exist, skip deletion")
+            else:
+                raise e
+        rbac.create_cluster_role_binding(
+            body = kubernetes.client.V1ClusterRoleBinding(
+                api_version="rbac.authorization.k8s.io/v1",
+                metadata=kubernetes.client.V1ObjectMeta(
+                    namespace=self.namespace,
+                    name=self.app.name,
+                    labels={
+                        "app.kubernetes.io/name": self.app.name,
+                        "app.kubernetes.io/instance": self.app.name,
+                        "app.kubernetes.io/version": SERVICE_VERSION,
+                    },
+                ),
+                role_ref=kubernetes.client.V1RoleRef(
+                    api_group="rbac.authorization.k8s.io",
+                    kind="ClusterRole",
+                    name=CLUSTERROLE_NAME,
+                ),
+                subjects=[
+                    kubernetes.client.V1Subject(
+                        kind="ServiceAccount",
+                        namespace=self.namespace,
+                        name=SERVICEACCOUNT_NAME,
+                    ),
+                ],
+            )
+        )
+        return True
 
     def _build_k8s_service_by_config(self, config: dict) -> kubernetes.client.V1Service:
         """Constructs k8s service spec by input config"""
