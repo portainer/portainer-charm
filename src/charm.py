@@ -320,17 +320,17 @@ class PortainerCharm(CharmBase):
 
     def _validate_config(self, config: dict) -> bool:
         """Validates the input config"""
-        if config[CONFIG_SERVICETYPE] not in (SERVICETYPE_CIP, SERVICETYPE_LB, SERVICETYPE_NP):
-            logger.error(f"config - service type {config[CONFIG_SERVICETYPE]} is not recognized")
+        if config.get(CONFIG_SERVICETYPE) not in (SERVICETYPE_CIP, SERVICETYPE_LB, SERVICETYPE_NP):
+            logger.error(f"config - service type {config.get(CONFIG_SERVICETYPE)} is not recognized")
             return False
-        if config[CONFIG_SERVICEHTTPPORT] is None or config[CONFIG_SERVICEEDGEPORT] is None:
+        if config.get(CONFIG_SERVICEHTTPPORT) is None or config.get(CONFIG_SERVICEEDGEPORT) is None:
             logger.error(f"config - service http or edge port cannot be None")
             return False
-        if config[CONFIG_SERVICEHTTPPORT] == config[CONFIG_SERVICEEDGEPORT]:
+        if config.get(CONFIG_SERVICEHTTPPORT) == config.get(CONFIG_SERVICEEDGEPORT):
             logger.error(f"config - service http and edge port cannot be the same")
             return False
-        if (config[CONFIG_SERVICEHTTPNODEPORT] == config[CONFIG_SERVICEEDGENODEPORT]
-            and config[CONFIG_SERVICEHTTPNODEPORT] is not None):
+        if (config.get(CONFIG_SERVICEHTTPNODEPORT) == config.get(CONFIG_SERVICEEDGENODEPORT)
+            and config.get(CONFIG_SERVICEHTTPNODEPORT) is not None):
             logger.error(f"config - service http and edge node port cannot be the same")
             return False
         return True
