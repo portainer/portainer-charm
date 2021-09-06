@@ -4,6 +4,7 @@
 
 import logging
 import utils
+import sys
 
 from kubernetes import kubernetes
 from ops.charm import CharmBase
@@ -11,11 +12,12 @@ from ops.framework import StoredState
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 
+# disable bytecode caching according to: https://discourse.charmhub.io/t/upgrading-a-charm/1131
+sys.dont_write_bytecode = True
 logger = logging.getLogger(__name__)
 # Reduce the log output from the Kubernetes library
 # logging.getLogger("kubernetes").setLevel(logging.INFO)
 CHARM_VERSION = 1.0
-PORTAINER_IMG = "portainer/portainer-ee:2.7.0"
 SERVICE_VERSION = "portainer-ee-2.7.0"
 SERVICETYPE_LB = "LoadBalancer"
 SERVICETYPE_CIP = "ClusterIP"
@@ -43,6 +45,7 @@ class PortainerCharm(CharmBase):
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
         self.framework.observe(self.on.start, self._start_portainer)
+        self.framework.observe(self.on.upgrade_charm, self._upgrade_charm)
         self.framework.observe(self.on.portainer_pebble_ready, self._start_portainer)
 
     def _on_install(self, event):
@@ -118,6 +121,17 @@ class PortainerCharm(CharmBase):
                 container.start("portainer")
 
             self.unit.status = ActiveStatus()
+
+    def _upgrade_charm(self, _):
+        """Handle charm upgrade"""
+        logger.info(f"upgrading from {self._stored.charm_version} to {CHARM_VERSION}")
+        if CHARM_VERSION < self._stored.charm_version:
+            logger.error("downgrade is not supported")
+        elif CHARM_VERSION == self._stored.charm_version:
+            logger.info("nothing to upgrade")
+        else:
+            # upgrade logic here
+            logger.info("nothing to upgrade")
 
     def _k8s_auth(self) -> bool:
         """Authenticate to kubernetes."""
