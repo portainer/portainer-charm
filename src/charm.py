@@ -60,6 +60,7 @@ class PortainerCharm(CharmBase):
             return
         self.unit.status = MaintenanceStatus("creating kubernetes service for portainer")
         self._create_k8s_service_by_config()
+        self._create_k8s_service_account()
 
     def _update_pebble(self, event, config: dict):
         """Update pebble by config"""
@@ -214,6 +215,34 @@ class PortainerCharm(CharmBase):
         api.create_namespaced_service(
             namespace=self.namespace,
             body=self._build_k8s_service_by_config(self._config),
+        )
+
+    def _create_k8s_service_account(self):
+        """Delete then create the service accounts needed by Portainer"""
+        logger.info("creating k8s service account")
+        SERVICEACCOUNT_NAME = "portainer-sa-clusteradmin"
+        api = kubernetes.client.CoreV1Api(kubernetes.client.ApiClient())
+        try:
+            api.delete_namespaced_service_account(name=SERVICEACCOUNT_NAME, namespace=self.namespace)
+        except kubernetes.client.exceptions.ApiException as e:
+            if e.status == 404:
+                logger.info("portainer service account doesn't exist, skip deletion")
+            else:
+                raise e
+        api.create_namespaced_service_account(
+            namespace=self.namespace,
+            body=kubernetes.client.V1ServiceAccount(
+                api_version="v1",
+                metadata=kubernetes.client.V1ObjectMeta(
+                    namespace=self.namespace,
+                    name=SERVICEACCOUNT_NAME,
+                    labels={
+                        "app.kubernetes.io/name": self.app.name,
+                        "app.kubernetes.io/instance": self.app.name,
+                        "app.kubernetes.io/version": SERVICE_VERSION,
+                    },
+                ),
+            ),
         )
 
     def _build_k8s_service_by_config(self, config: dict) -> kubernetes.client.V1Service:
