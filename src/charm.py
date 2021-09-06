@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Reduce the log output from the Kubernetes library
 # logging.getLogger("kubernetes").setLevel(logging.INFO)
 CHARM_VERSION = 1.0
-SERVICE_VERSION = "portainer-ee-2.7.0"
+SERVICE_VERSION = "portainer-ee"
 SERVICETYPE_LB = "LoadBalancer"
 SERVICETYPE_CIP = "ClusterIP"
 SERVICETYPE_NP = "NodePort"
@@ -94,6 +94,11 @@ class PortainerCharm(CharmBase):
         logger.info("configuring charm")
         # self.model.config is the aggregated config in the current runtime
         logger.debug(f"current config: {self._config} vs future config: {self.model.config}")
+        if not self._validate_config(self.model.config):
+            self.unit.status = WaitingStatus('waiting for a valid config')
+            logger.info("waiting for a valid config, configuration deferred")
+            event.defer()
+            return
         # merge the runtime config with stored one
         new_config = { **self._config, **self.model.config }
         if new_config != self._config:
@@ -311,6 +316,23 @@ class PortainerCharm(CharmBase):
                 ],
             )
         )
+        return True
+
+    def _validate_config(self, config: dict) -> bool:
+        """Validates the input config"""
+        if config[CONFIG_SERVICETYPE] not in (SERVICETYPE_CIP, SERVICETYPE_LB, SERVICETYPE_NP):
+            logger.error(f"config - service type {config[CONFIG_SERVICETYPE]} is not recognized")
+            return False
+        if config[CONFIG_SERVICEHTTPPORT] is None or config[CONFIG_SERVICEEDGEPORT] is None:
+            logger.error(f"config - service http or edge port cannot be None")
+            return False
+        if config[CONFIG_SERVICEHTTPPORT] == config[CONFIG_SERVICEEDGEPORT]:
+            logger.error(f"config - service http and edge port cannot be the same")
+            return False
+        if (config[CONFIG_SERVICEHTTPNODEPORT] == config[CONFIG_SERVICEEDGENODEPORT]
+            and config[CONFIG_SERVICEHTTPNODEPORT] is not None):
+            logger.error(f"config - service http and edge node port cannot be the same")
+            return False
         return True
 
     def _build_k8s_service_by_config(self, config: dict) -> kubernetes.client.V1Service:
