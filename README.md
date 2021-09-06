@@ -6,9 +6,9 @@
 - [x] Fixed image to ee 2.7.0 (needs to be done when publishing)
 - [x] Simple upgrade
 - [x] Fill up readme
-- [] Validate config
-- [] Tests
-- [] Code cleanup
+- [ ] Validate config
+- [ ] Tests
+- [ ] Code cleanups
 
 ## Description
 
@@ -26,7 +26,10 @@ This fully supported version of Portainer is available for business use. Visit h
 juju add-model portainer
 
 ### Deploy with Storage (Existing PV)
-juju deploy portainer-ee --storage data={your storage-pool},100M,1
+juju deploy portainer --trust --storage data={your storage-pool},100M,1
+
+### Trust Portainer to have Cluster Access
+juju trust portainer --scope=cluster
 
 ### Config with Load Balancer (Default)
 juju config portainer service_type=LoadBalancer service_http_port=9000 service_edge_port=8000
