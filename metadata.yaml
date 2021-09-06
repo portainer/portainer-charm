@@ -31,7 +31,7 @@ containers:
 resources:
   portainer-image:
     type: oci-image
-    description: OCI image for portainer (portainer/portainer-ce:latest)
+    description: OCI image for portainer
 
 storage:
   data:

@@ -2,7 +2,7 @@
 
 ## TODO
 -[x] Service account creation
--[] Fixed image
+-[x] Fixed image to ee 2.7.0 (needs to be done when publishing)
 -[] Simple upgrade
 -[] Fill up readme
 -[] Tests
