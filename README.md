@@ -3,7 +3,7 @@
 ## TODO
 -[x] Service account creation
 -[x] Fixed image to ee 2.7.0 (needs to be done when publishing)
--[] Simple upgrade
+-[x] Simple upgrade
 -[] Fill up readme
 -[] Tests
 -[] Code cleanup
