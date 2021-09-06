@@ -6,7 +6,7 @@
 - [x] Fixed image to ee 2.7.0 (needs to be done when publishing)
 - [x] Simple upgrade
 - [x] Fill up readme
-- [ ] Validate config
+- [x] Validate config
 - [ ] Tests
 - [ ] Code cleanups
 
