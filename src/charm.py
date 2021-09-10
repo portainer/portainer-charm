@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 # Reduce the log output from the Kubernetes library
 # logging.getLogger("kubernetes").setLevel(logging.INFO)
 CHARM_VERSION = 1.0
+CONTAINER_NAME = "portainer"
 SERVICE_VERSION = "portainer-ee"
 SERVICETYPE_LB = "LoadBalancer"
 SERVICETYPE_CIP = "ClusterIP"
@@ -73,17 +74,17 @@ class PortainerCharm(CharmBase):
         """Update pebble by config"""
         logger.info("updating pebble")
         # get a reference to the portainer workload container
-        container = self.unit.get_container("portainer")
+        container = self.unit.get_container(CONTAINER_NAME)
         if container.is_ready():
-            svc = container.get_services().get("portainer", None)
+            svc = container.get_services().get(CONTAINER_NAME, None)
             # check if the pebble service is already running
             if svc:
                 logger.info("stopping pebble service")
-                container.stop("portainer")
+                container.stop(CONTAINER_NAME)
             # override existing layer
-            container.add_layer("portainer", self._build_layer_by_config(config), combine=True)
+            container.add_layer(CONTAINER_NAME, self._build_layer_by_config(config), combine = True)
             logger.info("starting pebble service")
-            container.start("portainer")
+            container.start(CONTAINER_NAME)
         else:
             self.unit.status = WaitingStatus('waiting for container to start')
             logger.info("waiting for container to start, update pebble deferred")
@@ -120,14 +121,14 @@ class PortainerCharm(CharmBase):
     def _start_portainer(self, _):
         """Function to handle starting Portainer using Pebble"""
         # Get a reference to the portainer workload container
-        container = self.unit.get_container("portainer")
+        container = self.unit.get_container(CONTAINER_NAME)
         with container.is_ready():
-            svc = container.get_services().get("portainer", None)
+            svc = container.get_services().get(CONTAINER_NAME, None)
             # Check if the service is already running
             if not svc:
                 # Add a new layer
-                container.add_layer("portainer", self._build_layer_by_config(self._config), combine=True)
-                container.start("portainer")
+                container.add_layer(CONTAINER_NAME, self._build_layer_by_config(self._config), combine = True)
+                container.start(CONTAINER_NAME)
 
             self.unit.status = ActiveStatus()
 
@@ -150,7 +151,7 @@ class PortainerCharm(CharmBase):
         api = kubernetes.client.CoreV1Api(kubernetes.client.ApiClient())
 
         try:
-            api.list_namespaced_service(namespace=self.namespace)
+            api.list_namespaced_service(namespace = self.namespace)
         except kubernetes.client.exceptions.ApiException as e:
             if e.status == 403:
                 # If we can't read a cluster role, we don't have enough permissions
@@ -170,8 +171,8 @@ class PortainerCharm(CharmBase):
         existing = None
         try:
             existing = api.read_namespaced_service(
-                name="portainer",
-                namespace=self.namespace,
+                name = self.app.name,
+                namespace = self.namespace,
             )
         except kubernetes.client.exceptions.ApiException as e:
             if e.status == 404:
@@ -186,9 +187,9 @@ class PortainerCharm(CharmBase):
         existing.spec.type = replace.spec.type
         existing.spec.ports = replace.spec.ports
         api.replace_namespaced_service(
-            name="portainer", 
-            namespace=self.namespace, 
-            body=existing,
+            name = self.app.name, 
+            namespace = self.namespace, 
+            body = existing,
         )
 
     # Issue with this method:
@@ -216,9 +217,9 @@ class PortainerCharm(CharmBase):
         logger.debug(f"patching with body: {body}")
         if body:
             api.patch_namespaced_service(
-                name="portainer",
-                namespace=self.namespace,
-                body=body,
+                name = self.app.name,
+                namespace = self.namespace,
+                body = body,
             )
         else:
             logger.info("nothing to patch, skip patching")
@@ -229,15 +230,15 @@ class PortainerCharm(CharmBase):
         logger.info("creating k8s service")
         api = kubernetes.client.CoreV1Api(kubernetes.client.ApiClient())
         try:
-            api.delete_namespaced_service(name="portainer", namespace=self.namespace)
+            api.delete_namespaced_service(name = self.app.name, namespace = self.namespace)
         except kubernetes.client.exceptions.ApiException as e:
             if e.status == 404:
                 logger.info("portainer service doesn't exist, skip deletion")
             else:
                 raise e
         api.create_namespaced_service(
-            namespace=self.namespace,
-            body=self._build_k8s_service_by_config(self._config),
+            namespace = self.namespace,
+            body = self._build_k8s_service_by_config(self._config),
         )
 
     def _create_k8s_service_account(self) -> bool:
@@ -251,7 +252,7 @@ class PortainerCharm(CharmBase):
         rbac = kubernetes.client.RbacAuthorizationV1Api(client)
         # check cluster role, make sure it exists
         try:
-            rbac.read_cluster_role(name=CLUSTERROLE_NAME)
+            rbac.read_cluster_role(name = CLUSTERROLE_NAME)
         except kubernetes.client.exceptions.ApiException as e:
             if e.status == 404:
                 logger.error(f"{CLUSTERROLE_NAME} cluster role doesn't exist, please make sure RBAC is enabled in k8s cluster.")
@@ -260,20 +261,23 @@ class PortainerCharm(CharmBase):
                 raise e
         # creates service account
         try:
-            api.delete_namespaced_service_account(name=SERVICEACCOUNT_NAME, namespace=self.namespace)
+            api.delete_namespaced_service_account(
+              name = SERVICEACCOUNT_NAME, 
+              namespace = self.namespace
+            )
         except kubernetes.client.exceptions.ApiException as e:
             if e.status == 404:
                 logger.info(f"{SERVICEACCOUNT_NAME} service account doesn't exist, skip deletion")
             else:
                 raise e
         api.create_namespaced_service_account(
-            namespace=self.namespace,
-            body=kubernetes.client.V1ServiceAccount(
-                api_version="v1",
-                metadata=kubernetes.client.V1ObjectMeta(
-                    namespace=self.namespace,
-                    name=SERVICEACCOUNT_NAME,
-                    labels={
+            namespace = self.namespace,
+            body = kubernetes.client.V1ServiceAccount(
+                api_version = "v1",
+                metadata = kubernetes.client.V1ObjectMeta(
+                    namespace = self.namespace,
+                    name = SERVICEACCOUNT_NAME,
+                    labels = {
                         "app.kubernetes.io/name": self.app.name,
                         "app.kubernetes.io/instance": self.app.name,
                         "app.kubernetes.io/version": SERVICE_VERSION,
@@ -284,7 +288,7 @@ class PortainerCharm(CharmBase):
         # create cluster role binding with the service account
         logger.info("creating k8s cluster role binding")
         try:
-            rbac.delete_cluster_role_binding(name=CLUSTERRB_NAME)
+            rbac.delete_cluster_role_binding(name = CLUSTERRB_NAME)
         except kubernetes.client.exceptions.ApiException as e:
             if e.status == 404:
                 logger.info(f"{CLUSTERRB_NAME} cluster role binding doesn't exist, skip deletion")
@@ -292,26 +296,26 @@ class PortainerCharm(CharmBase):
                 raise e
         rbac.create_cluster_role_binding(
             body = kubernetes.client.V1ClusterRoleBinding(
-                api_version="rbac.authorization.k8s.io/v1",
-                metadata=kubernetes.client.V1ObjectMeta(
-                    namespace=self.namespace,
-                    name=self.app.name,
-                    labels={
+                api_version = "rbac.authorization.k8s.io/v1",
+                metadata = kubernetes.client.V1ObjectMeta(
+                    namespace = self.namespace,
+                    name = self.app.name,
+                    labels = {
                         "app.kubernetes.io/name": self.app.name,
                         "app.kubernetes.io/instance": self.app.name,
                         "app.kubernetes.io/version": SERVICE_VERSION,
                     },
                 ),
-                role_ref=kubernetes.client.V1RoleRef(
-                    api_group="rbac.authorization.k8s.io",
-                    kind="ClusterRole",
-                    name=CLUSTERROLE_NAME,
+                role_ref = kubernetes.client.V1RoleRef(
+                    api_group = "rbac.authorization.k8s.io",
+                    kind = "ClusterRole",
+                    name = CLUSTERROLE_NAME,
                 ),
-                subjects=[
+                subjects = [
                     kubernetes.client.V1Subject(
-                        kind="ServiceAccount",
-                        namespace=self.namespace,
-                        name=SERVICEACCOUNT_NAME,
+                        kind = "ServiceAccount",
+                        namespace = self.namespace,
+                        name = SERVICEACCOUNT_NAME,
                     ),
                 ],
             )
@@ -338,48 +342,48 @@ class PortainerCharm(CharmBase):
     def _build_k8s_service_by_config(self, config: dict) -> kubernetes.client.V1Service:
         """Constructs k8s service spec by input config"""
         return kubernetes.client.V1Service(
-            api_version="v1",
-            metadata=kubernetes.client.V1ObjectMeta(
-                namespace=self.namespace,
-                name=self.app.name,
-                labels={
+            api_version = "v1",
+            metadata = kubernetes.client.V1ObjectMeta(
+                namespace = self.namespace,
+                name = self.app.name,
+                labels = {
                     "io.portainer.kubernetes.application.stack": self.app.name,
                     "app.kubernetes.io/name": self.app.name,
                     "app.kubernetes.io/instance": self.app.name,
                     "app.kubernetes.io/version": SERVICE_VERSION,
                 },
             ),
-            spec=self._build_k8s_spec_by_config(config),
+            spec = self._build_k8s_spec_by_config(config),
         )
 
     def _build_k8s_spec_by_config(self, config: dict) -> kubernetes.client.V1ServiceSpec:
         """Constructs k8s service spec by input config"""
         service_type = config[CONFIG_SERVICETYPE]
         http_port = kubernetes.client.V1ServicePort(
-            name="http",
-            port=config[CONFIG_SERVICEHTTPPORT],
-            target_port=9000,
+            name = "http",
+            port = config[CONFIG_SERVICEHTTPPORT],
+            target_port = 9000,
         )
         if (service_type == SERVICETYPE_NP 
             and CONFIG_SERVICEHTTPNODEPORT in config):
             http_port.node_port = config[CONFIG_SERVICEHTTPNODEPORT]
 
         edge_port = kubernetes.client.V1ServicePort(
-            name="edge",
-            port=config[CONFIG_SERVICEEDGEPORT],
-            target_port=8000,
+            name = "edge",
+            port = config[CONFIG_SERVICEEDGEPORT],
+            target_port = 8000,
         )
         if (service_type == SERVICETYPE_NP 
             and CONFIG_SERVICEEDGENODEPORT in config):
             edge_port.node_port = config[CONFIG_SERVICEEDGENODEPORT]
         
         result = kubernetes.client.V1ServiceSpec(
-            type=service_type,
-            ports=[
+            type = service_type,
+            ports = [
                 http_port,
                 edge_port,
             ],
-            selector={
+            selector = {
                 "app.kubernetes.io/name": self.app.name,
             },
         )
@@ -394,7 +398,7 @@ class PortainerCharm(CharmBase):
             cmd = f"{cmd} --tunnel-port {config[CONFIG_SERVICEEDGENODEPORT]}"
         return {
             "services": {
-                "portainer": {
+                CONTAINER_NAME: {
                     "override": "replace",
                     "command": cmd,
                     "startup": "enabled",
@@ -434,4 +438,4 @@ class PortainerCharm(CharmBase):
 
 
 if __name__ == "__main__":
-    main(PortainerCharm, use_juju_for_storage=True)
+    main(PortainerCharm, use_juju_for_storage = True)
