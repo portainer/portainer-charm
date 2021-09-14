@@ -75,7 +75,7 @@ class PortainerCharm(CharmBase):
         logger.info("updating pebble")
         # get a reference to the portainer workload container
         container = self.unit.get_container(CONTAINER_NAME)
-        if container.is_ready():
+        if container.can_connect():
             svc = container.get_services().get(CONTAINER_NAME, None)
             # check if the pebble service is already running
             if svc:
