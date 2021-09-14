@@ -23,15 +23,15 @@ summary: |
 
 containers:
   portainer:
-    resource: portainer-image
+    resource: portainer-ee-image
     mounts:
       - storage: data
         location: /data
 
 resources:
-  portainer-image:
+  portainer-ee-image:
     type: oci-image
-    description: OCI image for portainer
+    description: OCI image for portainer-ee
 
 storage:
   data:
