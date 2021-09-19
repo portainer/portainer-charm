@@ -19,19 +19,24 @@ Create a Juju model for Portainer:
 juju add-model portainer
 ```
 
-Give Portainer cluster access:
-
-```
-juju trust portainer --scope=cluster
-```
-
 Deploy Portainer:
 
 ```
 juju deploy portainer --trust
 ```
 
+Give Portainer cluster access:
+
+```
+juju trust portainer --scope=cluster
+```
+
 This will deploy Portainer and expose it over an external load balancer.
+
+To access Portainer inside a browser:
+
+1. Run `juju status` to check the IP of the of the running Portainer application 
+2. Navigate to http://IP_ADDRESS:9000
 
 ## Configuration
 
@@ -70,3 +75,10 @@ Pack with Charmcraft:
 ```
 charmcraft pack
 ```
+
+## Testing
+
+The Python operator framework includes a very nice harness for testing
+operator behaviour without full deployment. Just `run_tests`:
+
+    ./run_tests
