@@ -47,7 +47,7 @@ You can also use Node port:
 juju config portainer service_type=NodePort service_http_port=9000 service_edge_port=8000 service_http_node_port=30777 service_edge_node_port=30776
 ```
 
-It is also possible to expose Portaine over Ingress:
+It is also possible to expose Portainer over Ingress:
 
 ```
 juju config portainer service_type=ClusterIP service_http_port=9000 service_edge_port=8000
