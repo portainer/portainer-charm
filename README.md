@@ -1,4 +1,4 @@
-# Portainer
+# Portainer Business Edition
 
 ## Description
 
