@@ -6,9 +6,10 @@
 import unittest
 from unittest.mock import Mock
 
-from charm import PortainerCharm
 from ops.model import ActiveStatus
 from ops.testing import Harness
+
+from charm import PortainerCharm
 
 
 class TestCharm(unittest.TestCase):
