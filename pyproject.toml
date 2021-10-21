@@ -1,7 +1,7 @@
 [project]
 name = "portainer-charm"
 description = "Kubernetes charm for Portainer"
-license = "zlib"
+license = "Apache 2.0"
 python = "^3.8"
 readme = "README.md"
 homepage = "https://charmhub.io/portainer"
@@ -38,7 +38,7 @@ per-file-ignores = ["tests/*:D100,D101,D102,D103"]
 docstring-convention = "google"
 # Check for properly formatted copyright header in each file
 copyright-check = "True"
-copyright-author = "Canonical Ltd."
+copyright-author = "Portainer.io"
 copyright-regexp = "Copyright\\s\\d{4}([-,]\\d{4})*\\s+%(author)s"
 
 # Static analysis tools configuration
