@@ -24,16 +24,6 @@ class ServiceType(str, Enum):
     SERVICETYPE_CIP = "ClusterIP"
     SERVICETYPE_NP = "NodePort"
 
-    @classmethod
-    def set(cls) -> set[str]:
-        """Returns all the available service types in a set."""
-        return set(map(lambda c: c.value, cls))
-
-    @classmethod
-    def has(cls, t: ServiceType) -> bool:
-        """Returns if the input service type is a part of the available types."""
-        return t in cls.set()
-
 
 class PortainerConfig(object):
     """Portainer Config Wrapper."""

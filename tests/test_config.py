@@ -6,40 +6,7 @@
 
 import unittest
 
-from config import ChangeType, PortainerConfig, ServiceType
-
-
-class TestServiceType(unittest.TestCase):
-    # When set is called
-    # Then it should return all types in ServiceType
-    def test_set(self):
-
-        result = ServiceType.set()
-
-        self.assertSetEqual(
-            result,
-            {
-                "LoadBalancer",
-                "ClusterIP",
-                "NodePort",
-            },
-        )
-
-    # When has is called
-    # Then it should return True if service type is defined
-    def test_has(self):
-
-        r1 = ServiceType.has("LoadBalancer")
-        r2 = ServiceType.has("ClusterIP")
-        r3 = ServiceType.has("NodePort")
-        r4 = ServiceType.has("NotExist")
-        r5 = ServiceType.has(None)
-
-        self.assertTrue(r1)
-        self.assertTrue(r2)
-        self.assertTrue(r3)
-        self.assertFalse(r4)
-        self.assertFalse(r5)
+from config import ChangeType, PortainerConfig
 
 
 class TestConfig(unittest.TestCase):
