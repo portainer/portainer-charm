@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> portainer-charm is not supported and this repository is now archived
+
 # Portainer Business Edition
 
 ## Description
